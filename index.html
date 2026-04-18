@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Weekly Leads Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink:#f5f0e8; --ink-dim:#a09a8e; --ink-faint:#4a4540;
+  --paper:#141210; --paper-2:#1c1a17; --paper-3:#242018; --rule:#2e2a24;
+  --gold:#d4a843; --teal:#4dbdaa; --red:#d45c4d; --blue:#5b9bd4; --green:#7dbb6e;
+  --mono:'IBM Plex Mono',monospace; --display:'Bebas Neue',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--mono);background:var(--paper);color:var(--ink);min-height:100vh;font-size:12px;line-height:1.5;}
+.header{background:var(--paper-2);border-bottom:1px solid var(--rule);padding:0 28px;display:flex;align-items:stretch;justify-content:space-between;min-height:56px;position:sticky;top:0;z-index:200;}
+.header-left{display:flex;align-items:center;gap:16px;}
+.header-mark{font-family:var(--display);font-size:28px;letter-spacing:2px;color:var(--gold);line-height:1;}
+.header-sep{width:1px;height:28px;background:var(--rule);}
+.header-sub{font-size:10px;color:var(--ink-dim);letter-spacing:.08em;text-transform:uppercase;}
+.header-right{display:flex;align-items:center;gap:12px;}
+.refresh-btn{background:none;border:1px solid var(--rule);color:var(--ink-dim);padding:6px 14px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;cursor:pointer;border-radius:3px;transition:all .15s;}
+.refresh-btn:hover{border-color:var(--gold);color:var(--gold);}
+.refresh-btn:disabled{opacity:.4;cursor:not-allowed;}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);flex-shrink:0;}
+.status-dot.live{background:var(--green);box-shadow:0 0 6px var(--green);}
+.status-dot.loading{background:var(--gold);animation:pulse 1s infinite;}
+.status-dot.error{background:var(--red);}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+.status-text{font-size:10px;color:var(--ink-faint);letter-spacing:.06em;}
+
+.filter-bar{background:var(--paper-2);border-bottom:2px solid var(--rule);padding:10px 28px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;}
+.filter-group{display:flex;flex-direction:column;gap:3px;}
+.filter-group label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);}
+select{background:var(--paper-3);border:1px solid var(--rule);color:var(--ink);padding:5px 28px 5px 10px;font-family:var(--mono);font-size:11px;border-radius:3px;cursor:pointer;outline:none;min-width:130px;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234a4540'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;transition:border-color .15s;}
+select:focus{border-color:var(--gold);}
+
+/* Loading / error state */
+.overlay{position:fixed;inset:0;background:var(--paper);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .5s;}
+.overlay.hidden{opacity:0;pointer-events:none;}
+.overlay-mark{font-family:var(--display);font-size:56px;letter-spacing:6px;color:var(--gold);}
+.overlay-msg{font-size:11px;color:var(--ink-dim);letter-spacing:.1em;text-transform:uppercase;}
+.overlay-bar{width:280px;height:2px;background:var(--rule);border-radius:1px;overflow:hidden;}
+.overlay-fill{height:100%;background:var(--gold);width:0%;transition:width .35s ease;}
+.overlay-err{font-size:11px;color:var(--red);max-width:480px;text-align:center;line-height:2;display:none;}
+.overlay-err code{font-family:var(--mono);background:var(--paper-3);padding:2px 6px;border-radius:2px;color:var(--ink-dim);}
+
+/* Manual paste fallback */
+.paste-area{width:480px;background:var(--paper-3);border:1px solid var(--rule);border-radius:4px;padding:12px;font-family:var(--mono);font-size:11px;color:var(--ink);resize:vertical;height:120px;outline:none;}
+.paste-area:focus{border-color:var(--gold);}
+.paste-btn{background:var(--gold);color:var(--paper);border:none;padding:8px 20px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;border-radius:3px;font-weight:600;}
+.paste-btn:hover{background:#e8b84e;}
+
+.main{padding:24px 28px;max-width:1600px;}
+.section-title{font-family:var(--display);font-size:22px;letter-spacing:2px;color:var(--ink-dim);margin-bottom:14px;display:flex;align-items:baseline;gap:10px;}
+.section-title span{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);}
+
+.kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:6px;overflow:hidden;margin-bottom:28px;}
+.kpi{background:var(--paper-2);padding:16px 18px;display:flex;flex-direction:column;gap:6px;transition:background .15s;}
+.kpi:hover{background:var(--paper-3);}
+.kpi-label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);}
+.kpi-value{font-family:var(--display);font-size:32px;letter-spacing:1px;line-height:1;color:var(--ink);}
+.kpi-value.gold{color:var(--gold);} .kpi-value.teal{color:var(--teal);} .kpi-value.red{color:var(--red);} .kpi-value.green{color:var(--green);} .kpi-value.blue{color:var(--blue);}
+
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+.charts-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px;}
+.chart-card{background:var(--paper-2);border:1px solid var(--rule);border-radius:6px;padding:18px;}
+.chart-card-title{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:14px;display:flex;align-items:center;}
+.accent-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);display:inline-block;margin-right:7px;flex-shrink:0;}
+.accent-dot.teal{background:var(--teal);} .accent-dot.blue{background:var(--blue);} .accent-dot.green{background:var(--green);}
+.chart-wrap{position:relative;height:220px;}
+.chart-wrap-lg{position:relative;height:260px;}
+
+.table-card{background:var(--paper-2);border:1px solid var(--rule);border-radius:6px;margin-bottom:28px;overflow:hidden;}
+.table-wrap{overflow-x:auto;max-height:480px;overflow-y:auto;}
+table{width:100%;border-collapse:collapse;font-size:11px;}
+thead th{position:sticky;top:0;background:var(--paper-3);color:var(--ink-dim);font-size:9px;text-transform:uppercase;letter-spacing:.1em;padding:10px 14px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--rule);font-weight:500;}
+thead th:first-child{text-align:left;}
+tbody tr{border-bottom:1px solid var(--rule);}
+tbody tr:hover{background:var(--paper-3);}
+tbody td{padding:9px 14px;text-align:right;color:var(--ink-dim);}
+tbody td:first-child{text-align:left;color:var(--ink);font-weight:500;white-space:nowrap;}
+.badge{display:inline-block;padding:2px 7px;border-radius:2px;font-size:10px;font-weight:500;}
+.badge-green{background:rgba(125,187,110,.15);color:var(--green);}
+.badge-amber{background:rgba(212,168,67,.15);color:var(--gold);}
+.badge-red{background:rgba(212,92,77,.15);color:var(--red);}
+.row-count{font-size:10px;color:var(--ink-faint);padding:8px 14px;border-top:1px solid var(--rule);}
+@media(max-width:900px){.charts-grid,.charts-grid-3{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<div class="overlay" id="overlay">
+  <div class="overlay-mark">WEEKLY</div>
+  <div class="overlay-msg" id="ov-msg">Fetching live data…</div>
+  <div class="overlay-bar"><div class="overlay-fill" id="ov-fill"></div></div>
+  <div class="overlay-err" id="ov-err">
+    <div id="ov-err-msg"></div>
+    <br>
+    <div style="color:var(--ink-dim);margin-bottom:12px;font-size:10px;letter-spacing:.06em">OR PASTE YOUR CSV DATA BELOW</div>
+    <textarea class="paste-area" id="paste-area" placeholder="Paste CSV content here (copy from Google Sheets → File → Download → CSV)…"></textarea>
+    <br><br>
+    <button class="paste-btn" onclick="loadFromPaste()">LOAD FROM PASTE</button>
+  </div>
+</div>
+
+<div class="header">
+  <div class="header-left">
+    <div class="header-mark">WEEKLY</div>
+    <div class="header-sep"></div>
+    <div class="header-sub">IPT Customer Leads · Live</div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot" id="status-dot"></div>
+    <div class="status-text" id="status-text">—</div>
+    <button class="refresh-btn" id="refresh-btn" onclick="loadAndRender()">↻ REFRESH</button>
+  </div>
+</div>
+
+<div class="filter-bar">
+  <div class="filter-group"><label>Channel</label>
+    <select id="f-ch"><option value="ALL">All Channels</option><option value="AP">AP (Non-TP)</option><option value="TP">TP</option></select></div>
+  <div class="filter-group"><label>Team</label>
+    <select id="f-tm"><option value="ALL">All Teams</option><option value="Hunting">Hunting</option><option value="Farming">Farming</option></select></div>
+  <div class="filter-group"><label>Data Source</label>
+    <select id="f-src"><option value="ALL">All Sources</option></select></div>
+  <div class="filter-group"><label>Week</label>
+    <select id="f-wk"><option value="ALL">All Weeks</option></select></div>
+  <div class="filter-group"><label>Month</label>
+    <select id="f-mo"><option value="ALL">All Months</option></select></div>
+</div>
+
+<div class="main">
+  <div class="kpi-strip" id="kpi-strip"></div>
+  <div class="section-title">VOLUME <span>leads · logins · demos · conversions</span></div>
+  <div class="charts-grid" style="margin-bottom:28px;">
+    <div class="chart-card"><div class="chart-card-title"><span class="accent-dot"></span>WEEKLY LEADS & CONVERSIONS</div><div class="chart-wrap-lg"><canvas id="c-leads-conv"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-title"><span class="accent-dot teal"></span>WEEKLY LOGINS & DEMOS</div><div class="chart-wrap-lg"><canvas id="c-logins-demos"></canvas></div></div>
+  </div>
+  <div class="section-title">COVERAGE <span>attempt · connect rates</span></div>
+  <div class="charts-grid" style="margin-bottom:28px;">
+    <div class="chart-card"><div class="chart-card-title"><span class="accent-dot blue"></span>ATTEMPT & CONNECT COVERAGE %</div><div class="chart-wrap-lg"><canvas id="c-coverage"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-title"><span class="accent-dot green"></span>CONVERSION · LOGIN · DEMO RATE %</div><div class="chart-wrap-lg"><canvas id="c-rates"></canvas></div></div>
+  </div>
+  <div class="section-title">SPEED & QUALITY <span>time · attempts · connects · talktime</span></div>
+  <div class="charts-grid-3" style="margin-bottom:16px;">
+    <div class="chart-card"><div class="chart-card-title"><span class="accent-dot"></span>MED. TIME TO FIRST ATTEMPT (hrs)</div><div class="chart-wrap"><canvas id="c-ttfa"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-title"><span class="accent-dot teal"></span>MED. TIME TO FIRST CONNECT (days)</div><div class="chart-wrap"><canvas id="c-ttfc"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-title"><span class="accent-dot blue"></span>MED. TALKTIME (secs)</div><div class="chart-wrap"><canvas id="c-talktime"></canvas></div></div>
+  </div>
+  <div class="charts-grid" style="margin-bottom:28px;">
+    <div class="chart-card"><div class="chart-card-title"><span class="accent-dot green"></span>MED. ATTEMPTS PER LEAD</div><div class="chart-wrap"><canvas id="c-attempts"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-title"><span class="accent-dot"></span>MED. CONNECTS PER LEAD</div><div class="chart-wrap"><canvas id="c-connects"></canvas></div></div>
+  </div>
+  <div class="section-title">DETAIL <span>week-by-week breakdown</span></div>
+  <div class="table-card">
+    <div class="table-wrap"><table><thead><tr>
+      <th>Week</th><th>Month</th><th>Leads</th><th>Logins</th><th>Demos</th><th>Conv.</th>
+      <th>Conv %</th><th>Login %</th><th>Demo %</th><th>Att. Cov %</th><th>Conn. Cov %</th>
+      <th>Med TTFA (h)</th><th>Med TTFC (d)</th><th>Med Talktime</th><th>Med Att.</th><th>Med Conn.</th>
+    </tr></thead><tbody id="table-body"></tbody></table></div>
+    <div class="row-count" id="row-count"></div>
+  </div>
+</div>
+
+<script>
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ-uRSKtgDjAcbM99hdKE7K30lK9UJb_Vwcu0QMxWHTeQCv3k3i8T3g2HO1II54h-wkPgwW6xhOYKE6/pub?gid=316774704&single=true&output=csv';
+const FONT = "'IBM Plex Mono', monospace";
+const C = {gold:'#d4a843',teal:'#4dbdaa',red:'#d45c4d',blue:'#5b9bd4',green:'#7dbb6e'};
+Chart.defaults.color='#6b6560'; Chart.defaults.font.family=FONT; Chart.defaults.font.size=10;
+const BASE={responsive:true,maintainAspectRatio:false,
+  plugins:{legend:{labels:{color:'#7a7570',font:{family:FONT,size:10},boxWidth:10,padding:14}},
+    tooltip:{backgroundColor:'#242018',borderColor:'#2e2a24',borderWidth:1,titleFont:{family:FONT,size:10},bodyFont:{family:FONT,size:10},padding:10,cornerRadius:3,titleColor:'#d4a843',bodyColor:'#a09a8e'}},
+  scales:{x:{grid:{color:'#2e2a24',lineWidth:.5},ticks:{color:'#6b6560',font:{family:FONT,size:9},maxRotation:35}},
+    y:{grid:{color:'#2e2a24',lineWidth:.5},ticks:{color:'#6b6560',font:{family:FONT,size:9}},border:{dash:[3,3]}}}};
+
+let CHARTS={}, ALL_ROWS=[];
+
+// ── Progress ──
+function prog(pct){document.getElementById('ov-fill').style.width=pct+'%';}
+function setStatus(state,msg){
+  document.getElementById('status-dot').className='status-dot '+state;
+  document.getElementById('status-text').textContent=msg;
+}
+
+// ── CSV parser ──
+function parseCSV(text){
+  const lines=text.replace(/\r/g,'').trim().split('\n');
+  const headers=lines[0].split(',').map(h=>h.replace(/^"|"$/g,'').trim());
+  return lines.slice(1).map(line=>{
+    const fields=[]; let cur='',inQ=false;
+    for(let i=0;i<line.length;i++){
+      if(line[i]==='"'&&!inQ&&(i===0||line[i-1]===',')){inQ=true;}
+      else if(line[i]==='"'&&inQ){inQ=false;}
+      else if(line[i]===','&&!inQ){fields.push(cur.trim());cur='';}
+      else cur+=line[i];
+    }
+    fields.push(cur.trim());
+    const o={}; headers.forEach((h,i)=>o[h]=(fields[i]||'').replace(/^"|"$/g,''));
+    return o;
+  }).filter(r=>r.assigned_date&&r.assigned_date.trim());
+}
+
+// ── Process rows ──
+function processRows(raw){
+  return raw.map(r=>{
+    const assigned=new Date(r.assigned_date); if(isNaN(assigned)) return null;
+    const firstCall=r.first_cus_call?new Date(r.first_cus_call):null;
+    const firstConn=r.first_conn?new Date(r.first_conn):null;
+    const fcAdj=firstCall&&firstCall>=assigned?firstCall:(firstCall?assigned:null);
+    const fnAdj=firstConn&&firstConn>=assigned?firstConn:(firstConn?assigned:null);
+    const ttfa_hrs=fcAdj?(fcAdj-assigned)/3600000:null;
+    const ttfc_days=fnAdj?Math.floor((fnAdj-assigned)/86400000):null;
+    const attempts=parseFloat(r.total_attempts)||0;
+    const conn=parseFloat(r.total_conn)||0;
+    const tt=parseFloat(r.total_talktime)||0;
+    let team='Unknown';
+    if(r.TP_Flag==='TP') team=r.ipt_team==='ca'?'Hunting':'Farming';
+    else{const t=(r.ipt_team||'').toLowerCase();team=t==='hunting'?'Hunting':t==='farming'?'Farming':'Unknown';}
+    const channel=r.TP_Flag==='TP'?'TP':'AP';
+    const dow=assigned.getDay();
+    const ws=new Date(assigned); ws.setDate(assigned.getDate()+(dow===0?-6:1-dow)); ws.setHours(0,0,0,0);
+    const we=new Date(ws); we.setDate(ws.getDate()+6);
+    const fmt=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    return{assigned,channel,team,source:r.data_source||'Unknown',
+      has_login:!!(r.login_date&&r.login_date.trim()),
+      has_demo:!!(r.demo_date&&r.demo_date.trim()),
+      converted:!!(r.converted_date&&r.converted_date.trim()),
+      attempted:attempts>0,connected:conn>0,
+      attempts:attempts>0?attempts:null,conn:conn>0?conn:null,
+      talktime:tt>0?tt:null,ttfa_hrs,ttfc_days,
+      wk_key:ws.toISOString().slice(0,10),
+      wk_label:`${fmt(ws)} – ${fmt(we)}`,
+      mo_label:assigned.toLocaleDateString('en-GB',{month:'short',year:'numeric'})};
+  }).filter(Boolean);
+}
+
+function median(arr){if(!arr.length)return null;const s=[...arr].sort((a,b)=>a-b);const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;}
+
+function aggregateWeeks(rows){
+  const bw={};
+  for(const r of rows){
+    if(!bw[r.wk_key])bw[r.wk_key]={wk_key:r.wk_key,wk_label:r.wk_label,mo_label:r.mo_label,leads:0,logins:0,demos:0,conv:0,attempted:0,connected:0,_ttfa:[],_ttfc:[],_tt:[],_att:[],_conn:[]};
+    const b=bw[r.wk_key];b.leads++;
+    if(r.has_login)b.logins++;if(r.has_demo)b.demos++;if(r.converted)b.conv++;
+    if(r.attempted)b.attempted++;if(r.connected)b.connected++;
+    if(r.ttfa_hrs!=null)b._ttfa.push(r.ttfa_hrs);if(r.ttfc_days!=null)b._ttfc.push(r.ttfc_days);
+    if(r.talktime!=null)b._tt.push(r.talktime);if(r.attempts!=null)b._att.push(r.attempts);if(r.conn!=null)b._conn.push(r.conn);
+  }
+  return Object.values(bw).map(b=>({
+    wk_key:b.wk_key,wk_label:b.wk_label,mo_label:b.mo_label,
+    leads:b.leads,logins:b.logins,demos:b.demos,conv:b.conv,
+    att_cov:b.leads?+(b.attempted/b.leads*100).toFixed(1):0,
+    conn_cov:b.leads?+(b.connected/b.leads*100).toFixed(1):0,
+    ttfa:median(b._ttfa)!=null?+median(b._ttfa).toFixed(1):null,
+    ttfc:median(b._ttfc)!=null?+median(b._ttfc).toFixed(1):null,
+    tt:median(b._tt)!=null?+median(b._tt).toFixed(1):null,
+    att:median(b._att)!=null?+median(b._att).toFixed(1):null,
+    conn:median(b._conn)!=null?+median(b._conn).toFixed(1):null,
+  })).sort((a,b)=>a.wk_key.localeCompare(b.wk_key));
+}
+
+function getFiltered(){
+  const ch=document.getElementById('f-ch').value,tm=document.getElementById('f-tm').value,
+    src=document.getElementById('f-src').value,wk=document.getElementById('f-wk').value,
+    mo=document.getElementById('f-mo').value;
+  return ALL_ROWS.filter(r=>(ch==='ALL'||r.channel===ch)&&(tm==='ALL'||r.team===tm)&&(src==='ALL'||r.source===src)&&(wk==='ALL'||r.wk_key===wk)&&(mo==='ALL'||r.mo_label===mo));
+}
+
+function populateFilters(rows){
+  ['f-src','f-wk','f-mo'].forEach(id=>{const s=document.getElementById(id);while(s.options.length>1)s.remove(1);});
+  [...new Set(rows.map(r=>r.source))].filter(Boolean).sort().forEach(s=>{const o=new Option(s,s);document.getElementById('f-src').appendChild(o);});
+  const weeks=[...new Set(rows.map(r=>r.wk_key))].sort();
+  weeks.forEach(wk=>{const lbl=rows.find(r=>r.wk_key===wk)?.wk_label||wk;document.getElementById('f-wk').appendChild(new Option(lbl,wk));});
+  const months=[...new Set(rows.map(r=>r.mo_label))];
+  months.sort((a,b)=>new Date('1 '+a)-new Date('1 '+b));
+  months.forEach(m=>document.getElementById('f-mo').appendChild(new Option(m,m)));
+}
+
+function renderKPIs(weeks){
+  if(!weeks.length){document.getElementById('kpi-strip').innerHTML='';return;}
+  const tot=weeks.reduce((s,r)=>({leads:s.leads+r.leads,logins:s.logins+r.logins,demos:s.demos+r.demos,conv:s.conv+r.conv}),{leads:0,logins:0,demos:0,conv:0});
+  const cr=tot.leads?+(tot.conv/tot.leads*100).toFixed(1):0;
+  const ac=+(weeks.reduce((s,r)=>s+r.att_cov,0)/weeks.length).toFixed(1);
+  const nc=+(weeks.reduce((s,r)=>s+r.conn_cov,0)/weeks.length).toFixed(1);
+  const ts=weeks.filter(r=>r.ttfa!=null).map(r=>r.ttfa).sort((a,b)=>a-b);
+  const tc=weeks.filter(r=>r.ttfc!=null).map(r=>r.ttfc).sort((a,b)=>a-b);
+  const med=a=>a.length?a[Math.floor(a.length/2)]:null;
+  const f1=v=>v==null?'—':Number(v).toFixed(1);
+  document.getElementById('kpi-strip').innerHTML=[
+    {l:'TOTAL LEADS',v:tot.leads.toLocaleString(),c:'gold'},
+    {l:'LOGINS',v:tot.logins.toLocaleString(),c:'teal'},
+    {l:'DEMOS',v:tot.demos.toLocaleString(),c:'blue'},
+    {l:'CONVERSIONS',v:tot.conv.toLocaleString(),c:'green'},
+    {l:'CONV RATE',v:cr.toFixed(1)+'%',c:cr>15?'green':cr>10?'':'red'},
+    {l:'AVG ATT. COV',v:ac.toFixed(1)+'%',c:''},
+    {l:'AVG CONN. COV',v:nc.toFixed(1)+'%',c:''},
+    {l:'MED TTFA (hrs)',v:f1(med(ts))+'h',c:med(ts)!=null&&med(ts)<24?'green':med(ts)!=null&&med(ts)<48?'':'red'},
+    {l:'MED TTFC (days)',v:f1(med(tc))+'d',c:''},
+  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.l}</div><div class="kpi-value${k.c?' '+k.c:''}">${k.v}</div></div>`).join('');
+}
+
+function dc(id){if(CHARTS[id]){CHARTS[id].destroy();delete CHARTS[id];}}
+function mk(id,cfg){dc(id);CHARTS[id]=new Chart(document.getElementById(id),cfg);}
+function lDs(label,data,color){return{label,data,borderColor:color,backgroundColor:color+'20',borderWidth:2,pointRadius:3,pointHoverRadius:5,tension:.3,fill:true};}
+function bDs(label,data,color){return{label,data,backgroundColor:color+'99',borderColor:color,borderWidth:1,borderRadius:2};}
+
+function renderCharts(weeks){
+  const lbl=weeks.map(r=>r.wk_label);
+  const y2=(color)=>({position:'right',grid:{display:false},ticks:{color,font:{family:FONT,size:9}},border:{dash:[3,3]}});
+  mk('c-leads-conv',{type:'bar',data:{labels:lbl,datasets:[{...bDs('Leads',weeks.map(r=>r.leads),C.gold),yAxisID:'y'},{...lDs('Conversions',weeks.map(r=>r.conv),C.green),type:'line',yAxisID:'y2'}]},options:{...BASE,scales:{...BASE.scales,y2:y2(C.green)}}});
+  mk('c-logins-demos',{type:'bar',data:{labels:lbl,datasets:[{...bDs('Logins',weeks.map(r=>r.logins),C.teal),yAxisID:'y'},{...lDs('Demos',weeks.map(r=>r.demos),C.blue),type:'line',yAxisID:'y2'}]},options:{...BASE,scales:{...BASE.scales,y2:y2(C.blue)}}});
+  mk('c-coverage',{type:'line',data:{labels:lbl,datasets:[lDs('Attempt Cov %',weeks.map(r=>r.att_cov),C.blue),lDs('Connect Cov %',weeks.map(r=>r.conn_cov),C.teal)]},options:{...BASE,scales:{...BASE.scales,y:{...BASE.scales.y,min:0,max:100,ticks:{...BASE.scales.y.ticks,callback:v=>v+'%'}}}}});
+  mk('c-rates',{type:'line',data:{labels:lbl,datasets:[lDs('Conv %',weeks.map(r=>r.leads?+(r.conv/r.leads*100).toFixed(1):null),C.green),lDs('Login %',weeks.map(r=>r.leads?+(r.logins/r.leads*100).toFixed(1):null),C.gold),lDs('Demo %',weeks.map(r=>r.leads?+(r.demos/r.leads*100).toFixed(1):null),C.blue)]},options:{...BASE,scales:{...BASE.scales,y:{...BASE.scales.y,ticks:{...BASE.scales.y.ticks,callback:v=>v+'%'}}}}});
+  mk('c-ttfa',{type:'line',data:{labels:lbl,datasets:[lDs('Med TTFA (hrs)',weeks.map(r=>r.ttfa),C.gold)]},options:{...BASE,plugins:{...BASE.plugins,legend:{display:false}}}});
+  mk('c-ttfc',{type:'line',data:{labels:lbl,datasets:[lDs('Med TTFC (days)',weeks.map(r=>r.ttfc),C.teal)]},options:{...BASE,plugins:{...BASE.plugins,legend:{display:false}},scales:{...BASE.scales,y:{...BASE.scales.y,ticks:{...BASE.scales.y.ticks,callback:v=>v+'d'}}}}});
+  mk('c-talktime',{type:'line',data:{labels:lbl,datasets:[lDs('Med Talktime (s)',weeks.map(r=>r.tt),C.blue)]},options:{...BASE,plugins:{...BASE.plugins,legend:{display:false}}}});
+  mk('c-attempts',{type:'bar',data:{labels:lbl,datasets:[bDs('Med Attempts',weeks.map(r=>r.att),C.green)]},options:{...BASE,plugins:{...BASE.plugins,legend:{display:false}}}});
+  mk('c-connects',{type:'bar',data:{labels:lbl,datasets:[bDs('Med Connects',weeks.map(r=>r.conn),C.gold)]},options:{...BASE,plugins:{...BASE.plugins,legend:{display:false}}}});
+}
+
+function renderTable(weeks){
+  const f1=v=>v==null?'—':Number(v).toFixed(1),fP=v=>v==null?'—':Number(v).toFixed(1)+'%',fI=v=>Number(v).toLocaleString();
+  const tbody=document.getElementById('table-body');
+  if(!weeks.length){tbody.innerHTML='<tr><td colspan="16" style="text-align:center;padding:40px;color:var(--ink-faint)">No data</td></tr>';document.getElementById('row-count').textContent='';return;}
+  tbody.innerHTML=weeks.map(r=>{
+    const cr=r.leads?+(r.conv/r.leads*100).toFixed(1):0,lr=r.leads?+(r.logins/r.leads*100).toFixed(1):0,dr=r.leads?+(r.demos/r.leads*100).toFixed(1):0;
+    const cb=cr>20?'badge-green':cr>12?'badge-amber':'badge-red';
+    const tc=r.ttfa!=null?(r.ttfa<24?'color:var(--green)':r.ttfa<48?'color:var(--gold)':'color:var(--red)'):'';
+    const dc=r.ttfc!=null?(r.ttfc<=1?'color:var(--green)':r.ttfc<=3?'color:var(--gold)':'color:var(--red)'):'';
+    return`<tr><td style="color:var(--gold);font-weight:600">${r.wk_label}</td><td style="color:var(--ink-faint);font-size:10px">${r.mo_label}</td><td>${fI(r.leads)}</td><td>${fI(r.logins)}</td><td>${fI(r.demos)}</td><td>${fI(r.conv)}</td><td><span class="badge ${cb}">${fP(cr)}</span></td><td>${fP(lr)}</td><td>${fP(dr)}</td><td>${fP(r.att_cov)}</td><td>${fP(r.conn_cov)}</td><td style="${tc}">${f1(r.ttfa)}</td><td style="${dc}">${f1(r.ttfc)}</td><td>${f1(r.tt)}</td><td>${f1(r.att)}</td><td>${f1(r.conn)}</td></tr>`;
+  }).join('');
+  document.getElementById('row-count').textContent=`${weeks.length} weeks · ${weeks.reduce((s,r)=>s+r.leads,0).toLocaleString()} total leads`;
+}
+
+function processAndRender(text){
+  prog(70);
+  const raw=parseCSV(text);
+  prog(85);
+  ALL_ROWS=processRows(raw);
+  populateFilters(ALL_ROWS);
+  render();
+  prog(100);
+  const now=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  setStatus('live',`Live · ${now} · ${ALL_ROWS.length.toLocaleString()} rows`);
+  document.getElementById('refresh-btn').disabled=false;
+  setTimeout(()=>document.getElementById('overlay').classList.add('hidden'),400);
+}
+
+function render(){
+  const weeks=aggregateWeeks(getFiltered());
+  renderKPIs(weeks); renderCharts(weeks); renderTable(weeks);
+}
+
+function loadFromPaste(){
+  const text=document.getElementById('paste-area').value.trim();
+  if(!text){alert('Please paste CSV data first');return;}
+  document.getElementById('ov-err').style.display='none';
+  document.getElementById('ov-msg').textContent='Processing pasted data…';
+  prog(50);
+  setTimeout(()=>processAndRender(text),50);
+}
+
+function showError(msg){
+  setStatus('error','Error — paste CSV to continue');
+  document.getElementById('ov-msg').textContent='Could not fetch live data automatically';
+  document.getElementById('ov-err-msg').innerHTML=`<code>${msg}</code><br><br>The browser blocked the request due to CORS. Use the paste fallback below, or set up the Google Apps Script proxy (see instructions).`;
+  document.getElementById('ov-err').style.display='block';
+  document.getElementById('refresh-btn').disabled=false;
+  prog(0);
+}
+
+async function loadAndRender(){
+  document.getElementById('refresh-btn').disabled=true;
+  document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('ov-err').style.display='none';
+  document.getElementById('ov-msg').textContent='Fetching live data from Google Sheets…';
+  setStatus('loading','Loading…');
+  prog(15);
+
+  // Try multiple approaches in order
+  const proxies=[
+    // 1. Direct (works if hosted on HTTPS and sheet allows it)
+    ()=>fetch(SHEET_URL,{cache:'no-store'}),
+    // 2. Google's own JSONP-style export with different params
+    ()=>fetch(SHEET_URL.replace('output=csv','output=csv')+'&t='+Date.now(),{cache:'no-store',mode:'no-cors'}).then(r=>{if(r.type==='opaque')throw new Error('opaque');return r;}),
+  ];
+
+  for(const [i,fetchFn] of proxies.entries()){
+    try{
+      prog(20+i*20);
+      const res=await fetchFn();
+      if(!res.ok)throw new Error(`HTTP ${res.status}`);
+      const text=await res.text();
+      if(!text.includes('assigned_date'))throw new Error('Response does not look like CSV');
+      processAndRender(text);
+      return;
+    }catch(e){
+      console.warn(`Fetch attempt ${i+1} failed:`,e.message);
+    }
+  }
+
+  // All failed — show paste fallback
+  showError('CORS blocked all fetch attempts');
+}
+
+document.querySelectorAll('select').forEach(s=>s.addEventListener('change',render));
+loadAndRender();
+</script>
+</body>
+</html>
