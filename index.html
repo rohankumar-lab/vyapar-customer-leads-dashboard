@@ -436,7 +436,7 @@ function processRows(raw){
       attempted:attempts>0,connected:conn>0,
       attempts:attempts>0?attempts:null,conn:conn>0?conn:null,
       talktime:tt>0?tt:null,tt_raw:tt,
-      ttfa_val,ttfa_unit,ttfa_days,ttfa_min,ttfc_days,
+      ttfa_val,ttfa_min,ttfc_days,
       never_dialed,never_connected,shallow_connect,
       day0_attempt,within30,single_touch,
       wk_key:ws.toISOString().slice(0,10),
@@ -879,17 +879,26 @@ async function loadAndRender(){
   document.getElementById('ov-msg').textContent='Fetching live data…';
   setStatus('loading','Loading…');
   prog(15);
-  try{
-    prog(30);
-    const res=await fetch(SHEET_URL,{cache:'no-store'});
-    if(!res.ok)throw new Error(`HTTP ${res.status}`);
-    const text=await res.text();
-    if(!text.includes('assigned_date'))throw new Error('Response does not look like CSV');
-    processAndRender(text);
-  }catch(e){
-    console.warn('Fetch failed:',e.message);
-    showError(e.message);
+
+  // Try direct fetch first (works when hosted on GitHub Pages or same-origin),
+  // then fall back to allorigins proxy (works from local file / other origins).
+  const PROXY_URL = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_URL);
+
+  for(const [i, url] of [SHEET_URL, PROXY_URL].entries()){
+    try{
+      prog(20 + i * 25);
+      document.getElementById('ov-msg').textContent = i === 0 ? 'Fetching live data…' : 'Retrying via proxy…';
+      const res = await fetch(url, {cache:'no-store'});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      if(!text.includes('assigned_date')) throw new Error('Response does not look like CSV');
+      processAndRender(text);
+      return;
+    }catch(e){
+      console.warn(`Fetch attempt ${i+1} failed:`, e.message);
+    }
   }
+  showError('Both direct fetch and proxy failed. Paste CSV below as fallback.');
 }
 
 document.querySelectorAll('select').forEach(s=>s.addEventListener('change',render));
