@@ -230,7 +230,7 @@ tbody td:first-child{text-align:left;color:var(--text);font-weight:500;}
 
   <div class="section-hd"><h2>Speed & Quality</h2><span>time · attempts · connects · talktime</span></div>
   <div class="charts-grid-3" style="margin-bottom:14px;">
-    <div class="chart-card"><div class="chart-card-title"><span class="cd accent"></span>Med. Time to First Attempt (min for DB · days for others)</div><div class="chart-wrap"><canvas id="c-ttfa"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-title"><span class="cd accent"></span>Med. Time to First Attempt (mins)</div><div class="chart-wrap"><canvas id="c-ttfa"></canvas></div></div>
     <div class="chart-card"><div class="chart-card-title"><span class="cd teal"></span>Med. Time to First Connect (days)</div><div class="chart-wrap"><canvas id="c-ttfc"></canvas></div></div>
     <div class="chart-card"><div class="chart-card-title"><span class="cd blue"></span>Med. Talktime (secs)</div><div class="chart-wrap"><canvas id="c-talktime"></canvas></div></div>
   </div>
@@ -244,7 +244,7 @@ tbody td:first-child{text-align:left;color:var(--text);font-weight:500;}
     <div class="table-wrap"><table><thead><tr>
       <th>Week</th><th>Month</th><th>Leads</th><th>Logins</th><th>Demos</th><th>Conv.</th>
       <th>Conv %</th><th>Login %</th><th>Demo %</th><th>Att. Cov</th><th>Conn. Cov</th>
-      <th>Med TTFA (DB=min/other=days)</th><th>Med TTFC (days)</th><th>Med Talk</th><th>Med Att.</th><th>Med Conn.</th>
+      <th>Med TTFA (mins)</th><th>Med TTFC (days)</th><th>Med Talk</th><th>Med Att.</th><th>Med Conn.</th>
     </tr></thead><tbody id="table-body-1"></tbody></table></div>
     <div class="row-count" id="row-count-1"></div>
   </div>
@@ -285,8 +285,8 @@ tbody td:first-child{text-align:left;color:var(--text);font-weight:500;}
 
   <div class="section-hd"><h2>Speed & Follow-up</h2><span>day-0 dialing and persistence</span></div>
   <div class="charts-grid-3" style="margin-bottom:20px;">
-    <div class="chart-card"><div class="chart-card-title"><span class="cd green"></span>% Attempted Same Day (Day 0)</div><div class="chart-wrap"><canvas id="c-day0"></canvas></div></div>
-    <div class="chart-card"><div class="chart-card-title"><span class="cd accent"></span>% Attempted within 30 min of Login <em style="font-style:normal;color:var(--text-3)">(DB Upload only)</em></div><div class="chart-wrap"><canvas id="c-30min"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-title"><span class="cd green"></span>% Attempted within 30 min (all sources)</div><div class="chart-wrap"><canvas id="c-day0"></canvas></div></div>
+    <div class="chart-card"><div class="chart-card-title"><span class="cd accent"></span>% Attempted within 30 min — DB Upload</div><div class="chart-wrap"><canvas id="c-30min"></canvas></div></div>
     <div class="chart-card"><div class="chart-card-title"><span class="cd amber"></span>% Single-Touch Abandonment</div><div class="chart-wrap"><canvas id="c-single-touch"></canvas></div></div>
   </div>
 
@@ -392,32 +392,17 @@ function processRows(raw){
     const fnAdj=firstConn&&firstConn>=assigned?firstConn:(firstConn?assigned:null);
     const ttfc_days=fnAdj?Math.floor((fnAdj-assigned)/86400000):null;
 
-    // TTFA logic:
-    // DB Upload: use login_date + login_time as assignment proxy → TTFA in minutes
-    // All other sources: use assigned_date (date only, no time) → TTFA in days
-    const isDB=(r.data_source||'').toLowerCase()==='db upload';
-    let ttfa_val=null, ttfa_unit=null;
+    // TTFA: use time_assigned_date (full datetime) for all sources → minutes
+    const timeAssigned=r.time_assigned_date?new Date(r.time_assigned_date):null;
+    const assignedBase=(timeAssigned&&!isNaN(timeAssigned))?timeAssigned:assigned;
+    let ttfa_val=null;
     if(firstCall){
-      if(isDB && r.login_date && r.login_time){
-        const loginDT=new Date(r.login_date+' '+r.login_time);
-        if(!isNaN(loginDT)){
-          const diffMin=(firstCall-loginDT)/60000;
-          ttfa_val=diffMin>=0?+diffMin.toFixed(1):0; // clamp negatives to 0
-          ttfa_unit='min';
-        }
-      } else {
-        // Date-only: diff in whole days from assigned_date midnight
-        const assignedMid=new Date(assigned); assignedMid.setHours(0,0,0,0);
-        const callMid=new Date(firstCall); callMid.setHours(0,0,0,0);
-        const diffDays=Math.round((callMid-assignedMid)/86400000);
-        ttfa_val=diffDays>=0?diffDays:0;
-        ttfa_unit='days';
-      }
+      const diffMin=(firstCall-assignedBase)/60000;
+      ttfa_val=diffMin>=0?+diffMin.toFixed(1):0;
     }
-    // within30 only meaningful for DB leads (has minute precision)
-    const within30=isDB&&ttfa_unit==='min'&&ttfa_val!=null&&ttfa_val<=30;
-    const ttfa_min=ttfa_unit==='min'?ttfa_val:null;  // keep for within30 filter
-    const ttfa_days=ttfa_unit==='days'?ttfa_val:null;
+    const within30=ttfa_val!=null&&ttfa_val<=30;
+    const ttfa_min=ttfa_val;
+    const ttfa_days=null;
     const attempts=parseFloat(r.total_attempts)||0;
     const conn=parseFloat(r.total_conn)||0;
     const tt=parseFloat(r.total_talktime)||0;
@@ -493,9 +478,8 @@ function aggregateWeeks(rows){
     if(r.never_dialed)b.never_dialed++;
     if(r.never_connected)b.never_connected++;
     if(r.shallow_connect)b.shallow++;
-    if(r.day0_attempt)b.day0++;
-    if(r.within30)b.within30++;
-    if((r.source||'').toLowerCase()==='db upload'&&r.attempted)b.db_attempted++;
+    if(r.within30){b.day0++;b.within30++;}
+    // db_attempted no longer separately tracked; within30 applies to all
     if(r.single_touch)b.single_touch++;
     if(r.ttfa_val!=null)b._ttfa.push(r.ttfa_val);
     if(r.ttfc_days!=null)b._ttfc.push(r.ttfc_days);
@@ -514,15 +498,14 @@ function aggregateWeeks(rows){
     pct_never_conn:b.leads?+(b.never_connected/b.leads*100).toFixed(1):0,
     pct_shallow:b.connected?+(b.shallow/b.connected*100).toFixed(1):0,
     pct_day0:b.attempted?+(b.day0/b.attempted*100).toFixed(1):0,
-    pct_30min:b.db_attempted?+(b.within30/b.db_attempted*100).toFixed(1):null,
+    pct_30min:b.attempted?+(b.within30/b.attempted*100).toFixed(1):0,
     pct_single_touch:b.attempted?+(b.single_touch/b.attempted*100).toFixed(1):0,
     pct_multi_conn:b.conv?+(b._conv_conn.filter(c=>c>=2).length/b._conv_conn.length*100).toFixed(1):0,
     avg_conv_conn:avg(b._conv_conn)!=null?+avg(b._conv_conn).toFixed(1):null,
     att_conn_ratio:b.connected?+(b.attempted/b.connected).toFixed(2):null,
     avg_talk_connected:b.connected&&b._tt.length?+(b._tt.reduce((a,v)=>a+v,0)/b.connected).toFixed(0):null,
     ttfa:median(b._ttfa)!=null?+median(b._ttfa).toFixed(1):null,
-    ttfa_has_db: b._ttfa_db_count>0,
-    ttfa_has_other: b._ttfa_other_count>0,
+
     ttfc:median(b._ttfc)!=null?+median(b._ttfc).toFixed(1):null,
     tt:median(b._tt)!=null?+median(b._tt).toFixed(1):null,
     att:median(b._att)!=null?+median(b._att).toFixed(1):null,
@@ -635,7 +618,7 @@ function renderKPI1(weeks,C){
     {l:'Conv Rate',v:cr+'%',c:cr>15?'green':cr>8?'amber':'red'},
     {l:'Avg Att. Cov',v:ac+'%',c:''},
     {l:'Avg Conn. Cov',v:nc+'%',c:''},
-    {l:'Avg TTFA (DB=min,rest=days)',v:mttfa!=null?mttfa+'':' —',c:''},
+    {l:'Avg TTFA (mins)',v:mttfa!=null?mttfa+'min':'—',c:mttfa&&mttfa<30?'green':mttfa&&mttfa<60?'amber':'red'},
   ].map(k=>`<div class="kpi"><div class="kpi-label">${k.l}</div><div class="kpi-value${k.c?' '+k.c:''}">${k.v}</div></div>`).join('');
 }
 
@@ -653,7 +636,7 @@ function renderKPI2(weeks,C){
     {l:'Avg Never Dialed',v:avgNeverDialed+'%',c:avgNeverDialed>20?'red':avgNeverDialed>10?'amber':'green'},
     {l:'Avg No Connect',v:avgNoConn+'%',c:avgNoConn>30?'red':avgNoConn>20?'amber':''},
     {l:'Avg Shallow (<60s)',v:avgShallow+'%',c:avgShallow>40?'red':avgShallow>25?'amber':''},
-    {l:'Avg Day-0 Attempt',v:avgDay0+'%',c:avgDay0>70?'green':avgDay0>50?'amber':'red'},
+    {l:'Avg Within 30 min',v:avgDay0+'%',c:avgDay0>70?'green':avgDay0>50?'amber':'red'},
   ].map(k=>`<div class="kpi"><div class="kpi-label">${k.l}</div><div class="kpi-value${k.c?' '+k.c:''}">${k.v}</div></div>`).join('');
 }
 
@@ -679,7 +662,7 @@ function renderMetricsCharts(weeks,C){
   mk('c-logins-demos',{type:'bar',data:{labels:lbl,datasets:[{...bDs('Logins',weeks.map(r=>r.logins),C.teal),yAxisID:'y'},{...lDs('Demos',weeks.map(r=>r.demos),C.blue),type:'line',yAxisID:'y2'}]},options:{...B,scales:{...B.scales,y2:y2r(C.blue)}}});
   mk('c-coverage',{type:'line',data:{labels:lbl,datasets:[lDs('Attempt Cov %',weeks.map(r=>r.att_cov),C.blue),lDs('Connect Cov %',weeks.map(r=>r.conn_cov),C.teal)]},options:{...B,scales:{...B.scales,y:{...B.scales.y,min:0,max:100,ticks:{...B.scales.y.ticks,callback:v=>v+'%'}}}}});
   mk('c-rates',{type:'line',data:{labels:lbl,datasets:[lDs('Conv %',weeks.map(r=>r.leads?+(r.conv/r.leads*100).toFixed(1):null),C.green),lDs('Login %',weeks.map(r=>r.leads?+(r.logins/r.leads*100).toFixed(1):null),C.amber),lDs('Demo %',weeks.map(r=>r.leads?+(r.demos/r.leads*100).toFixed(1):null),C.blue)]},options:{...B,scales:{...B.scales,y:{...B.scales.y,ticks:{...B.scales.y.ticks,callback:v=>v+'%'}}}}});
-  mk('c-ttfa',{type:'line',data:{labels:lbl,datasets:[lDs('TTFA (DB=min / others=days)',weeks.map(r=>r.ttfa),C.accent)]},options:{...B,plugins:{...B.plugins,legend:{display:false}}}});
+  mk('c-ttfa',{type:'line',data:{labels:lbl,datasets:[lDs('TTFA (mins)',weeks.map(r=>r.ttfa),C.accent)]},options:{...B,plugins:{...B.plugins,legend:{display:false}},scales:{...B.scales,y:{...B.scales.y,ticks:{...B.scales.y.ticks,callback:v=>v+'min'}}}}});
   mk('c-ttfc',{type:'line',data:{labels:lbl,datasets:[lDs('TTFC (days)',weeks.map(r=>r.ttfc),C.teal)]},options:{...B,plugins:{...B.plugins,legend:{display:false}},scales:{...B.scales,y:{...B.scales.y,ticks:{...B.scales.y.ticks,callback:v=>v+'d'}}}}});
   mk('c-talktime',{type:'line',data:{labels:lbl,datasets:[lDs('Med Talktime',weeks.map(r=>r.tt),C.blue)]},options:{...B,plugins:{...B.plugins,legend:{display:false}}}});
   mk('c-attempts',{type:'bar',data:{labels:lbl,datasets:[bDs('Med Attempts',weeks.map(r=>r.att),C.green)]},options:{...B,plugins:{...B.plugins,legend:{display:false}}}});
@@ -701,7 +684,7 @@ function renderMetricsTable(weeks){
       <td>${fI(r.leads)}</td><td>${fI(r.logins)}</td><td>${fI(r.demos)}</td><td>${fI(r.conv)}</td>
       <td><span class="badge ${cb}">${fP(cr)}</span></td>
       <td>${fP(lr)}</td><td>${fP(dr)}</td><td>${fP(r.att_cov)}</td><td>${fP(r.conn_cov)}</td>
-      <td>${f1(r.ttfa)}</td><td>${f1(r.ttfc)}d</td>
+      <td>${f1(r.ttfa)}min</td><td>${f1(r.ttfc)}d</td>
       <td>${f1(r.tt)}s</td><td>${f1(r.att)}</td><td>${f1(r.conn)}</td>
     </tr>`;
   }).join('');
@@ -774,7 +757,7 @@ function renderRCA(weeks,rows,C){
   mk('c-att-conn-ratio',{type:'line',data:{labels:lbl,datasets:[lDs('Att:Conn Ratio',weeks.map(r=>r.att_conn_ratio),C.blue)]},options:{...B,plugins:{...B.plugins,legend:{display:false}}}});
   mk('c-shallow',{type:'line',data:{labels:lbl,datasets:[lDs('Shallow Connect %',weeks.map(r=>r.pct_shallow),C.accent)]},options:{...B,plugins:{...B.plugins,legend:{display:false}},scales:{...B.scales,y:{...B.scales.y,ticks:{...B.scales.y.ticks,callback:v=>v+'%'}}}}});
   mk('c-avg-talk',{type:'line',data:{labels:lbl,datasets:[lDs('Avg Talk (s)',weeks.map(r=>r.avg_talk_connected),C.teal)]},options:{...B,plugins:{...B.plugins,legend:{display:false}}}});
-  mk('c-day0',{type:'line',data:{labels:lbl,datasets:[lDs('Day-0 %',weeks.map(r=>r.pct_day0),C.green)]},options:{...B,plugins:{...B.plugins,legend:{display:false}},scales:{...B.scales,y:{...B.scales.y,ticks:{...B.scales.y.ticks,callback:v=>v+'%'}}}}});
+  mk('c-day0',{type:'line',data:{labels:lbl,datasets:[lDs('Within 30min % (all)',weeks.map(r=>r.pct_day0),C.green)]},options:{...B,plugins:{...B.plugins,legend:{display:false}},scales:{...B.scales,y:{...B.scales.y,ticks:{...B.scales.y.ticks,callback:v=>v+'%'}}}}});
   mk('c-30min',{type:'line',data:{labels:lbl,datasets:[lDs('Within 30min %',weeks.map(r=>r.pct_30min),C.accent)]},options:{...B,plugins:{...B.plugins,legend:{display:false}},scales:{...B.scales,y:{...B.scales.y,ticks:{...B.scales.y.ticks,callback:v=>v+'%'}}}}});
   mk('c-single-touch',{type:'line',data:{labels:lbl,datasets:[lDs('Single Touch Abandon %',weeks.map(r=>r.pct_single_touch),C.amber)]},options:{...B,plugins:{...B.plugins,legend:{display:false}},scales:{...B.scales,y:{...B.scales.y,ticks:{...B.scales.y.ticks,callback:v=>v+'%'}}}}});
   mk('c-conv-effort',{type:'line',data:{labels:lbl,datasets:[lDs('Avg Connects to Convert',weeks.map(r=>r.avg_conv_conn),C.blue)]},options:{...B,plugins:{...B.plugins,legend:{display:false}}}});
