@@ -209,6 +209,8 @@ tbody td:first-child{text-align:left;color:var(--text);font-weight:500;}
     <select id="f-mo"><option value="ALL">All Months</option></select></div>
   <div class="filter-group"><label>Week</label>
     <select id="f-wk"><option value="ALL">All Weeks</option></select></div>
+  <div class="filter-group"><label>Team Lead</label>
+    <select id="f-tl"><option value="ALL">All TLs</option></select></div>
 </div>
 
 <!-- ═══════════════ TAB 1 : WEEKLY METRICS ═══════════════ -->
@@ -430,7 +432,7 @@ function processRows(raw){
     const we=new Date(ws); we.setDate(ws.getDate()+6);
     const fmt=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
 
-    return{assigned,channel,team,source:r.data_source||'Unknown',
+    return{assigned,channel,team,source:r.data_source||'Unknown',team_lead:r.team_lead||'',
       agent:r.agent_email||'',
       has_login,has_demo,converted,skip,
       attempted:attempts>0,connected:conn>0,
@@ -554,18 +556,20 @@ function getFiltered(){
     tm=document.getElementById('f-tm').value,
     src=document.getElementById('f-src').value,
     wk=document.getElementById('f-wk').value,
-    mo=document.getElementById('f-mo').value;
+    mo=document.getElementById('f-mo').value,
+    tl=document.getElementById('f-tl').value;
   return ALL_ROWS.filter(r=>
     (ch==='ALL'||r.channel===ch)&&
     (tm==='ALL'||r.team===tm)&&
     (src==='ALL'||r.source===src)&&
     (wk==='ALL'||r.wk_key===wk)&&
-    (mo==='ALL'||r.mo_label===mo)
+    (mo==='ALL'||r.mo_label===mo)&&
+    (tl==='ALL'||r.team_lead===tl)
   );
 }
 
 function populateFilters(rows){
-  ['f-src','f-wk','f-mo'].forEach(id=>{const s=document.getElementById(id);while(s.options.length>1)s.remove(1);});
+  ['f-src','f-wk','f-mo','f-tl'].forEach(id=>{const s=document.getElementById(id);while(s.options.length>1)s.remove(1);});
   [...new Set(rows.map(r=>r.source))].filter(Boolean).sort().forEach(s=>document.getElementById('f-src').appendChild(new Option(s,s)));
   [...new Set(rows.map(r=>r.wk_key))].sort().forEach(wk=>{
     const lbl=rows.find(r=>r.wk_key===wk)?.wk_label||wk;
@@ -573,6 +577,7 @@ function populateFilters(rows){
   });
   const months=[...new Set(rows.map(r=>r.mo_label))].sort((a,b)=>new Date('1 '+a)-new Date('1 '+b));
   months.forEach(m=>document.getElementById('f-mo').appendChild(new Option(m,m)));
+  [...new Set(rows.map(r=>r.team_lead))].filter(Boolean).sort().forEach(tl=>document.getElementById('f-tl').appendChild(new Option(tl,tl)));
 }
 
 // ── CHART HELPERS ──
