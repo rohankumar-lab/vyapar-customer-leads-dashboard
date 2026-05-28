@@ -211,6 +211,18 @@ tbody td:first-child{text-align:left;color:var(--text);font-weight:500;}
     <select id="f-wk"><option value="ALL">All Weeks</option></select></div>
   <div class="filter-group"><label>Team Lead</label>
     <select id="f-tl"><option value="ALL">All TLs</option></select></div>
+  <div class="filter-group"><label>Working Day</label>
+    <select id="f-wd">
+      <option value="ALL">All Days</option>
+      <option value="WORK">Working Days (Mon–Sat)</option>
+      <option value="OFF">Non-working (Sun)</option>
+    </select></div>
+  <div class="filter-group"><label>Working Time</label>
+    <select id="f-wt">
+      <option value="ALL">All Hours</option>
+      <option value="WORK">Working Hours (10AM–7PM IST)</option>
+      <option value="OFF">Off-hours</option>
+    </select></div>
 </div>
 
 <!-- ═══════════════ TAB 1 : WEEKLY METRICS ═══════════════ -->
@@ -432,7 +444,15 @@ function processRows(raw){
     const we=new Date(ws); we.setDate(ws.getDate()+6);
     const fmt=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
 
+    // Working day/time flags — time_assigned_date is IST, JS parses as local but
+    // server stores IST so we treat the parsed time directly as IST
+    const tad=assignedBase; // full datetime from time_assigned_date
+    const dow=tad.getDay(); // 0=Sun,1=Mon,...,6=Sat
+    const hhmm=tad.getHours()*60+tad.getMinutes();
+    const is_working_day=dow>=1&&dow<=6; // Mon–Sat
+    const is_working_time=hhmm>=600&&hhmm<1140; // 10:00–18:59 (10AM–7PM = <19:00)
     return{assigned,channel,team,source:r.data_source||'Unknown',team_lead:r.team_lead||'',
+      is_working_day,is_working_time,
       agent:r.agent_email||'',
       has_login,has_demo,converted,skip,
       attempted:attempts>0,connected:conn>0,
@@ -557,14 +577,18 @@ function getFiltered(){
     src=document.getElementById('f-src').value,
     wk=document.getElementById('f-wk').value,
     mo=document.getElementById('f-mo').value,
-    tl=document.getElementById('f-tl').value;
+    tl=document.getElementById('f-tl').value,
+    wd=document.getElementById('f-wd').value,
+    wt=document.getElementById('f-wt').value;
   return ALL_ROWS.filter(r=>
     (ch==='ALL'||r.channel===ch)&&
     (tm==='ALL'||r.team===tm)&&
     (src==='ALL'||r.source===src)&&
     (wk==='ALL'||r.wk_key===wk)&&
     (mo==='ALL'||r.mo_label===mo)&&
-    (tl==='ALL'||r.team_lead===tl)
+    (tl==='ALL'||r.team_lead===tl)&&
+    (wd==='ALL'||(wd==='WORK'?r.is_working_day:!r.is_working_day))&&
+    (wt==='ALL'||(wt==='WORK'?r.is_working_time:!r.is_working_time))
   );
 }
 
